@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>乃木談 自動連続再生</title>
+<style>
+  :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f5f6f8; color: #1f2328; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 6px; font-size: 1.45rem; }
+  .sub { margin: 0 0 20px; color: #667085; font-size: .92rem; line-height: 1.6; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 18px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(0,0,0,.04); }
+  label { display:block; font-size:.9rem; font-weight:600; margin-bottom:7px; }
+  select, button, input[type="checkbox"] { font: inherit; }
+  select { width:100%; padding:11px 12px; border:1px solid #cfd4dc; border-radius:10px; background:#fff; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+  button { border:0; border-radius:10px; padding:10px 14px; cursor:pointer; background:#111827; color:#fff; font-weight:600; }
+  button.secondary { background:#eef0f3; color:#222; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .current { margin: 2px 0 4px; font-size:.8rem; color:#667085; }
+  .title { margin:0 0 8px; font-size:1.15rem; line-height:1.5; }
+  .meta { color:#667085; font-size:.9rem; }
+  audio { width:100%; margin-top:14px; }
+  .next { margin-top:12px; padding:10px 12px; background:#f3f4f6; border-radius:10px; font-size:.9rem; line-height:1.55; }
+  .status { margin-top:12px; min-height: 1.4em; color:#475467; font-size:.9rem; line-height:1.5; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:14px; font-size:.9rem; }
+  .note { margin-top:14px; font-size:.8rem; line-height:1.65; color:#667085; }
+  .update-box { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .update-info { color:#667085; font-size:.82rem; line-height:1.5; }
+  .list-wrap { max-height: 520px; overflow:auto; border:1px solid #eee; border-radius:10px; padding:0 12px; }
+  .list { margin:0; padding:0; list-style:none; }
+  .list li { padding:10px 0; border-top:1px solid #eee; display:flex; gap:12px; align-items:baseline; }
+  .list li:first-child { border-top:0; }
+  .num { width:58px; flex:0 0 58px; color:#667085; font-variant-numeric:tabular-nums; }
+  .date { width:92px; flex:0 0 92px; color:#667085; }
+  .ep { flex:1; min-width:0; }
+  .unavailable { color:#98a2b3; }
+  .badge { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px; background:#eef0f3; color:#667085; font-size:.7rem; vertical-align:middle; }
+  .source-link { margin-top:10px; font-size:.82rem; }
+  a { color:inherit; }
+  @media (max-width:600px) {
+    .date { width:auto; flex:0 0 84px; }
+    .num { width:auto; flex:0 0 46px; }
+    .list li { gap:8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>乃木談 自動連続再生</h1>
+  <p class="sub">再生終了後、再生済みの日付より新しい最初のエピソードへ自動で進みます。音声は配信元から直接再生し、このページのサーバーでは中継しません。</p>
+
+  <section class="card">
+    <div class="update-box">
+      <div>
+        <strong>エピソード情報</strong>
+        <div class="update-info" id="updateInfo">初期登録：#1〜#288</div>
+      </div>
+      <button id="updateBtn">エピソード更新</button>
+    </div>
+    <div class="status" id="updateStatus"></div>
+  </section>
+
+  <section class="card">
+    <label for="episodeSelect">開始するエピソード</label>
+    <select id="episodeSelect"></select>
+    <div class="row">
+      <button id="startBtn">この回から再生</button>
+      <button id="resumeBtn" class="secondary">前回から再開</button>
+      <button id="latestBtn" class="secondary">最新回から再生</button>
+    </div>
+    <label class="check"><input id="continuous" type="checkbox" checked> 連続再生する</label>
+  </section>
+
+  <section class="card">
+    <div class="current" id="currentLabel">未再生</div>
+    <h2 class="title" id="currentTitle">開始するエピソードを選んでください</h2>
+    <div class="meta" id="currentMeta"></div>
+    <audio id="player" controls preload="none"></audio>
+    <div class="next" id="nextBox">次回：—</div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="card">
+    <h2 style="font-size:1rem;margin:0 0 10px;">登録済みエピソード</h2>
+    <div class="list-wrap">
+      <ul class="list" id="episodeList"></ul>
+    </div>
+    <p class="note">#1〜#196は過去のAuDee時代のアーカイブ情報も含む「目録」です。現行Megaphone RSSから直接音声URLを取得できるのは現在公開されている回（現在は#197以降が中心）です。過去回の音声URLが再取得できた場合は、エピソード更新時に上書きされます。</p>
+    <div class="source-link">現行RSS：<a href="https://feeds.megaphone.fm/TFM4767169392" target="_blank" rel="noopener">feeds.megaphone.fm/TFM4767169392</a></div>
+  </section>
+</main>
+
+<script>
+const RSS_URL = "https://feeds.megaphone.fm/TFM4767169392";
+const INITIAL_COUNT = 288;
+const START_DATE = "2021-04-02";
+const STORAGE = {
+  catalog: "nogidan.catalog.v2",
+  episodeDate: "nogidan.currentDate",
+  position: "nogidan.position",
+  updatedAt: "nogidan.updatedAt"
+};
+
+const knownTitles = {
+  1: "ベルクさんの店長目指します！",
+  2: "～Thank you for listening！ I hope this radio program last for a long time.～",
+  3: "全然真面目な番組じゃありません！笑",
+  4: "あれ？これはもしかして、ついに、、歳を取ったのか？",
+  5: "レイちゃんはNaturalオシャレさん",
+  6: "目指せ！ツッコミニスト！-完-",
+  7: "我々、すくすくと育っております！",
+  8: "松尾美佑は もんじゃのプロ！",
+  9: "オーディーに来てくださった皆は私たちの味方♪",
+  10: "10回目にしてやっと満足できる回でした!",
+  11: "私たち現実にいるよ！",
+  12: "脳みそが溶けてた～",
+  13: "（そのこだわり）わかんな～い。",
+  14: "松尾美佑は8月24日顔",
+  15: "松尾さん〇〇〇に乗れない！？撮影のウラ話も！",
+  16: "目指せ！女優とモデルの番組！！",
+  17: "自由を与えられると困惑します！",
+  18: "松尾さんの部屋は汚部屋！？",
+  19: "乃木坂46 新メンバーオーディションちょっとでも迷っている人へ♪",
+  20: "清宮レイ＆松尾美佑の妄想バイト談",
+  21: "乃木坂46 4期生メンバーオーディションの舞台裏",
+  22: "肋骨と書いて”ジョコツ”と読む",
+  23: "乃木談 大反省会",
+  24: "清宮レイは「れなちさんモード」を手に入れた!!",
+  25: "乃木談のメインパーソナリティーは清宮レイと松尾美佑です！",
+  26: "秋の味覚はやっぱり…",
+  27: "ベルクさんから「帰ってきた！かぼちゃサラダ2021」＆「なめらか。すいーとおいもサラダ」をいただきました！！",
+  28: "清宮レイおすすめ映画紹介のコーナー！",
+  29: "ニュース原稿読みに挑戦!!",
+  30: "足ながレイちゃん",
+  31: "反省も必要だけど、前を向くのが重要です。 by松尾",
+  32: "クリスマスに取りつかれたアイドル",
+  33: "清宮さん みかんを一日〇〇個食べる！？",
+  34: "清宮レイ＆松尾美佑のサイリウムカラーの由来は？",
+  35: "松尾さんの家には〇〇がある！",
+  36: "卵かけご飯について真剣にトーク!!",
+  37: "いっぱい心配してください！",
+  38: "台風かな??",
+  39: "画面上で判断されるのは悔しいです！一回会ってみ！",
+  40: "乃木談では胸キュンセリフはやりません",
+  283: "まゆやん…まゆにゃん…まゆ……\"たん\"か…！",
+  284: "ｽｺﾞｲｼﾞｬﾝ!!!!",
+  285: "まゆさん日本語喋ってる姿かっこいいです！",
+  286: "何冊買ってもかわいい写真しか出てこないので",
+  287: "このままだと融合しちゃう!!",
+  288: "\"なんか\"に怯えないでください！"
+};
+
+let EPISODES = buildInitialCatalog();
+let currentIndex = -1;
+let saveTimer = null;
+
+const select = document.getElementById("episodeSelect");
+const player = document.getElementById("player");
+const startBtn = document.getElementById("startBtn");
+const resumeBtn = document.getElementById("resumeBtn");
+const latestBtn = document.getElementById("latestBtn");
+const continuous = document.getElementById("continuous");
+const currentLabel = document.getElementById("currentLabel");
+const currentTitle = document.getElementById("currentTitle");
+const currentMeta = document.getElementById("currentMeta");
+const nextBox = document.getElementById("nextBox");
+const status = document.getElementById("status");
+const episodeList = document.getElementById("episodeList");
+const updateBtn = document.getElementById("updateBtn");
+const updateStatus = document.getElementById("updateStatus");
+const updateInfo = document.getElementById("updateInfo");
+
+function buildInitialCatalog() {
+  const start = new Date(`${START_DATE}T00:00:00Z`);
+  return Array.from({ length: INITIAL_COUNT }, (_, i) => {
+    const number = i + 1;
+    const d = new Date(start.getTime() + i * 7 * 86400000);
+    const date = d.toISOString().slice(0, 10);
+    return {
+      number,
+      date,
+      title: knownTitles[number] || `#${number} のエピソード`,
+      audio: null,
+      source: "catalog"
+    };
+  });
+}
+
+function loadCatalog() {
+  try {
+    const raw = localStorage.getItem(STORAGE.catalog);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return;
+    const merged = mergeEpisodes(EPISODES, data);
+    if (merged.length) EPISODES = merged;
+  } catch (_) {}
+}
+
+function saveCatalog() {
+  localStorage.setItem(STORAGE.catalog, JSON.stringify(EPISODES));
+}
+
+function mergeEpisodes(base, incoming) {
+  const map = new Map();
+  for (const ep of base) {
+    if (ep?.date) map.set(ep.date, normalizeEpisode(ep));
+  }
+  for (const ep of incoming) {
+    if (!ep?.date) continue;
+    const normalized = normalizeEpisode(ep);
+    const old = map.get(normalized.date);
+    map.set(normalized.date, {
+      ...(old || {}),
+      ...normalized,
+      title: normalized.title && !/^#\d+ のエピソード$/.test(normalized.title)
+        ? normalized.title
+        : (old?.title || normalized.title || ""),
+      audio: normalized.audio || old?.audio || null,
+      source: normalized.audio ? (normalized.source || "rss") : (old?.source || normalized.source || "catalog")
+    });
+  }
+  return [...map.values()].filter(e => e.date).sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function normalizeEpisode(ep) {
+  const title = cleanTitle(ep.title || "");
+  const number = Number.isFinite(Number(ep.number)) ? Number(ep.number) : extractNumber(title);
+  return {
+    number: number || null,
+    date: String(ep.date).slice(0,10),
+    title: title || (number ? `#${number} のエピソード` : "エピソード"),
+    audio: ep.audio || null,
+    source: ep.source || "catalog"
+  };
+}
+
+function extractNumber(title) {
+  const m = String(title).match(/#(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+function cleanTitle(title) {
+  return String(title)
+    .replace(/^\s+|\s+$/g, "")
+    .replace(/^#\d+\s*/, "")
+    .replace(/\s+/g, " ");
+}
+
+function fmtDate(date) { return String(date).replaceAll("-", "/"); }
+
+function populate() {
+  select.innerHTML = "";
+  for (const ep of EPISODES) {
+    const option = document.createElement("option");
+    option.value = ep.date;
+    const label = ep.title && !/^#\d+ のエピソード$/.test(ep.title)
+      ? ep.title
+      : "タイトル未取得";
+    option.textContent = `#${ep.number ?? "?"}  ${fmtDate(ep.date)}  ${label}`;
+    select.appendChild(option);
+  }
+
+  const savedDate = localStorage.getItem(STORAGE.episodeDate);
+  if (savedDate && EPISODES.some(e => e.date === savedDate)) select.value = savedDate;
+
+  episodeList.innerHTML = EPISODES.slice().reverse().map(ep => {
+    const available = Boolean(ep.audio);
+    const title = escapeHtml(ep.title || "タイトル未取得");
+    return `<li>
+      <span class="num">#${ep.number ?? "?"}</span>
+      <span class="date">${fmtDate(ep.date)}</span>
+      <span class="ep ${available ? "" : "unavailable"}">${title}${available ? "" : '<span class="badge">音声URL未取得</span>'}</span>
+    </li>`;
+  }).join("");
+
+  const updated = localStorage.getItem(STORAGE.updatedAt);
+  updateInfo.textContent = updated
+    ? `登録 ${EPISODES.length}件 ／ 最終更新：${new Date(updated).toLocaleString("ja-JP")}`
+    : `登録 ${EPISODES.length}件 ／ 初期目録：#1〜#${Math.max(...EPISODES.map(e => e.number || 0), 0)}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+}
+
+function indexByDate(date) { return EPISODES.findIndex(e => e.date === date); }
+
+function setCurrent(index) {
+  if (index < 0 || index >= EPISODES.length) return;
+  currentIndex = index;
+  const ep = EPISODES[index];
+  currentLabel.textContent = `現在再生中  #${ep.number ?? "?"}`;
+  currentTitle.textContent = ep.title || "タイトル未取得";
+  currentMeta.textContent = fmtDate(ep.date);
+  select.value = ep.date;
+
+  const next = EPISODES[index + 1];
+  nextBox.textContent = next
+    ? `次回：#${next.number ?? "?"}  ${fmtDate(next.date)}  ${next.title || "タイトル未取得"}`
+    : "次回：現在登録されている最新回です";
+}
+
+async function playIndex(index, resume = false) {
+  if (index < 0 || index >= EPISODES.length) return;
+  const ep = EPISODES[index];
+  setCurrent(index);
+
+  if (!ep.audio) {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    status.textContent = `#${ep.number ?? "?"} は音声URLが未取得です。「エピソード更新」を実行してから再度お試しください。`;
+    return;
+  }
+
+  const savedDate = localStorage.getItem(STORAGE.episodeDate);
+  const savedPosition = Number(localStorage.getItem(STORAGE.position) || 0);
+  localStorage.setItem(STORAGE.episodeDate, ep.date);
+
+  player.pause();
+  player.src = ep.audio;
+  player.load();
+
+  const onMetadata = () => {
+    if (resume && savedDate === ep.date && Number.isFinite(savedPosition) && savedPosition > 0 && Number.isFinite(player.duration) && savedPosition < player.duration - 5) {
+      player.currentTime = savedPosition;
+    }
+  };
+  player.addEventListener("loadedmetadata", onMetadata, { once: true });
+
+  try {
+    await player.play();
+    status.textContent = resume ? "前回位置から再生しています。" : "再生中です。";
+  } catch (_) {
+    status.textContent = "ブラウザの再生制限により自動再生できませんでした。再生ボタンを押してください。";
+  }
+}
+
+function nextByDate(currentDate) {
+  return EPISODES.findIndex(e => e.date > currentDate);
+}
+
+player.addEventListener("play", () => {
+  status.textContent = "再生中です。";
+  startSaveTimer();
+});
+
+player.addEventListener("pause", () => savePosition());
+
+player.addEventListener("ended", async () => {
+  savePosition(0);
+  if (!continuous.checked) {
+    status.textContent = "再生終了しました。";
+    return;
+  }
+  if (currentIndex < 0 || currentIndex >= EPISODES.length) return;
+  const currentDate = EPISODES[currentIndex].date;
+  const nextIndex = nextByDate(currentDate);
+  if (nextIndex < 0) {
+    status.textContent = "登録済みの最新回まで再生しました。新しい回が公開されたら「エピソード更新」を押してください。";
+    return;
+  }
+  const nextEp = EPISODES[nextIndex];
+  status.textContent = `次回 #${nextEp.number ?? "?"} を再生しています…`;
+  await playIndex(nextIndex, false);
+});
+
+function savePosition(force = null) {
+  if (currentIndex < 0 || currentIndex >= EPISODES.length) return;
+  const value = force === null ? (Number.isFinite(player.currentTime) ? player.currentTime : 0) : force;
+  localStorage.setItem(STORAGE.position, String(value));
+  localStorage.setItem(STORAGE.episodeDate, EPISODES[currentIndex].date);
+}
+
+function startSaveTimer() {
+  if (saveTimer) return;
+  saveTimer = setInterval(savePosition, 5000);
+}
+
+startBtn.addEventListener("click", () => {
+  const idx = indexByDate(select.value);
+  localStorage.removeItem(STORAGE.position);
+  playIndex(idx, false);
+});
+
+resumeBtn.addEventListener("click", () => {
+  const savedDate = localStorage.getItem(STORAGE.episodeDate);
+  const idx = indexByDate(savedDate || select.value);
+  if (idx < 0) {
+    status.textContent = "前回の再生情報はありません。";
+    return;
+  }
+  playIndex(idx, true);
+});
+
+latestBtn.addEventListener("click", () => {
+  localStorage.removeItem(STORAGE.position);
+  playIndex(EPISODES.length - 1, false);
+});
+
+async function fetchRSS() {
+  const response = await fetch(RSS_URL, {
+    method: "GET",
+    mode: "cors",
+    cache: "default",
+    headers: { "Accept": "application/rss+xml, application/xml, text/xml, */*" }
+  });
+  if (!response.ok) throw new Error(`RSS取得失敗: HTTP ${response.status}`);
+  const xmlText = await response.text();
+  const xml = new DOMParser().parseFromString(xmlText, "application/xml");
+  if (xml.querySelector("parsererror")) throw new Error("RSSのXMLを解析できませんでした。");
+
+  const items = [...xml.querySelectorAll("item")];
+  const incoming = items.map(item => {
+    const rawTitle = item.querySelector("title")?.textContent || "";
+    const number = extractNumber(rawTitle);
+    const title = cleanTitle(rawTitle);
+    const enclosure = item.querySelector("enclosure");
+    const audio = enclosure?.getAttribute("url") || null;
+    const pubDateText = item.querySelector("pubDate")?.textContent || "";
+    const date = parseDate(pubDateText);
+    return (date && audio) ? { number, date, title, audio, source: "rss" } : null;
+  }).filter(Boolean);
+  return incoming;
+}
+
+function parseDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0,10);
+}
+
+updateBtn.addEventListener("click", async () => {
+  updateBtn.disabled = true;
+  updateStatus.textContent = "エピソード情報を取得しています…";
+  try {
+    const incoming = await fetchRSS();
+    if (!incoming.length) throw new Error("RSSからエピソードを取得できませんでした。");
+    const before = new Map(EPISODES.map(e => [e.date, e.audio]));
+    EPISODES = mergeEpisodes(EPISODES, incoming);
+    saveCatalog();
+    const added = incoming.filter(e => !before.has(e.date)).length;
+    const audioUpdated = incoming.filter(e => before.has(e.date) && before.get(e.date) !== e.audio).length;
+    localStorage.setItem(STORAGE.updatedAt, new Date().toISOString());
+    populate();
+    updateStatus.textContent = `更新完了：RSSから ${incoming.length} 件を取得しました（新規 ${added} 件、音声URL更新 ${audioUpdated} 件）。`;
+  } catch (err) {
+    updateStatus.textContent = `更新できませんでした：${err.message}。GitHub PagesなどのHTTPS環境で開くと取得できる場合があります。`;
+  } finally {
+    updateBtn.disabled = false;
+  }
+});
+
+window.addEventListener("beforeunload", () => savePosition());
+
+loadCatalog();
+populate();
+</script>
+</body>
+</html>
